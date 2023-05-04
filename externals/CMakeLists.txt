@@ -10,45 +10,44 @@ include(DownloadExternals)
 include(ExternalProject)
 
 # Boost
-set(BOOST_ROOT "${CMAKE_SOURCE_DIR}/externals/boost")
-set(Boost_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/externals/boost")
-set(Boost_NO_SYSTEM_PATHS ON)
-add_library(boost INTERFACE)
-target_include_directories(boost SYSTEM INTERFACE ${Boost_INCLUDE_DIR})
+if (NOT USE_SYSTEM_BOOST)
+    set(BOOST_ROOT "${CMAKE_SOURCE_DIR}/externals/boost")
+    set(Boost_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/externals/boost")
+    set(Boost_NO_SYSTEM_PATHS ON)
+    add_library(boost INTERFACE)
+    target_include_directories(boost SYSTEM INTERFACE ${Boost_INCLUDE_DIR})
 
-# Boost::serialization
-file(GLOB boost_serialization_SRC "${CMAKE_SOURCE_DIR}/externals/boost/libs/serialization/src/*.cpp")
-add_library(boost_serialization STATIC ${boost_serialization_SRC})
-target_link_libraries(boost_serialization PUBLIC boost)
+    # Boost::serialization
+    file(GLOB boost_serialization_SRC "${CMAKE_SOURCE_DIR}/externals/boost/libs/serialization/src/*.cpp")
+    add_library(boost_serialization STATIC ${boost_serialization_SRC})
+    target_link_libraries(boost_serialization PUBLIC boost)
 
-# Boost::iostreams
-add_library(
-    boost_iostreams
-    STATIC
-    ${CMAKE_SOURCE_DIR}/externals/boost/libs/iostreams/src/file_descriptor.cpp
-    ${CMAKE_SOURCE_DIR}/externals/boost/libs/iostreams/src/mapped_file.cpp
-)
-target_link_libraries(boost_iostreams PUBLIC boost)
-
+    # Boost::iostreams
+    add_library(
+        boost_iostreams
+        STATIC
+        ${CMAKE_SOURCE_DIR}/externals/boost/libs/iostreams/src/file_descriptor.cpp
+        ${CMAKE_SOURCE_DIR}/externals/boost/libs/iostreams/src/mapped_file.cpp
+    )
+    target_link_libraries(boost_iostreams PUBLIC boost)
 # Add additional boost libs here; remember to ALIAS them in the root CMakeLists!
+endif()
 
 # Catch2
-set(CATCH_INSTALL_DOCS OFF)
-set(CATCH_INSTALL_EXTRAS OFF)
-add_subdirectory(catch2)
+if (CITRA_TESTS AND NOT TARGET Catch2::Catch2)
+    message(STATUS "Using bundled catch2")
+    set(CATCH_INSTALL_DOCS OFF)
+    set(CATCH_INSTALL_EXTRAS OFF)
+    set(CATCH_BUILD_STATIC_LIBRARY ON)
+    add_subdirectory(catch2 EXCLUDE_FROM_ALL)
+endif()
 
 # Crypto++
-set(CRYPTOPP_BUILD_DOCUMENTATION OFF)
-set(CRYPTOPP_BUILD_TESTING OFF)
-set(CRYPTOPP_INSTALL OFF)
-set(CRYPTOPP_SOURCES "${CMAKE_SOURCE_DIR}/externals/cryptopp")
-add_subdirectory(cryptopp-cmake)
-
-# HACK: Mismatch between compilation of CryptoPP and headers used in Citra can cause runtime issues.
-# Pull out the compile definitions from CryptoPP and apply them to Citra as well to fix this.
-# See: https://github.com/weidai11/cryptopp/issues/1191
-get_source_file_property(CRYPTOPP_COMPILE_DEFINITIONS ${CRYPTOPP_SOURCES}/cryptlib.cpp TARGET_DIRECTORY cryptopp COMPILE_DEFINITIONS)
-set(CRYPTOPP_COMPILE_DEFINITIONS ${CRYPTOPP_COMPILE_DEFINITIONS} PARENT_SCOPE)
+if (NOT TARGET cryptopp::cryptopp)
+    message(STATUS "Using bundled cryptopp")
+    add_subdirectory(cryptopp)
+    add_library(cryptopp::cryptopp ALIAS cryptopp)
+endif()
 
 # HACK: The logic to set up the base include directory for CryptoPP does not work with Android SDK CMake 3.22.1.
 # Until there is a fixed version available, this code will detect and add in the proper include if it does not exist.
@@ -70,19 +69,21 @@ target_include_directories(dds-ktx INTERFACE ./dds-ktx)
 
 # fmt and Xbyak need to be added before dynarmic
 # libfmt
-option(FMT_INSTALL "" ON)
-add_subdirectory(fmt EXCLUDE_FROM_ALL)
+if (NOT TARGET fmt::fmt)
+    add_subdirectory(fmt)
+endif()
 
 # Xbyak
-if ("x86_64" IN_LIST ARCHITECTURE)
+if ("x86_64" IN_LIST ARCHITECTURE AND NOT TARGET xbyak::xbyak)
     add_subdirectory(xbyak EXCLUDE_FROM_ALL)
 endif()
 
 # Dynarmic
-if ("x86_64" IN_LIST ARCHITECTURE OR "arm64" IN_LIST ARCHITECTURE)
+if (("x86_64" IN_LIST ARCHITECTURE OR "arm64" IN_LIST ARCHITECTURE) AND NOT TARGET dynarmic::dynarmic)
     set(DYNARMIC_TESTS OFF)
     set(DYNARMIC_FRONTENDS "A32")
     add_subdirectory(dynarmic EXCLUDE_FROM_ALL)
+    add_library(dynarmic::dynarmic ALIAS dynarmic)
 endif()
 
 # getopt
@@ -94,7 +95,10 @@ endif()
 add_subdirectory(glad)
 
 # inih
-add_subdirectory(inih)
+if (NOT TARGET inih::INIReader)
+    message(STATUS "Using bundled inih")
+    add_subdirectory(inih)
+endif()
 
 # MicroProfile
 add_library(microprofile INTERFACE)
@@ -114,48 +118,71 @@ add_subdirectory(open_source_archives)
 set(INTEGER_SAMPLES ON CACHE BOOL "")
 set(SOUNDSTRETCH OFF CACHE BOOL "")
 set(SOUNDTOUCH_DLL OFF CACHE BOOL "")
-add_subdirectory(soundtouch)
+add_subdirectory(soundtouch EXCLUDE_FROM_ALL)
 
 # Teakra
 add_subdirectory(teakra EXCLUDE_FROM_ALL)
 
+if (NOT TARGET libusb::usb)
+    message(STATUS "Using bundled libusb")
+    add_subdirectory(libusb EXCLUDE_FROM_ALL)
+endif()
+
 # SDL2
 if (ENABLE_SDL2 AND NOT USE_SYSTEM_SDL2)
+    message(STATUS "Using bundled SDL2")
     add_subdirectory(sdl2)
 endif()
 
 # Zstandard
-set(ZSTD_LEGACY_SUPPORT OFF)
-set(ZSTD_BUILD_PROGRAMS OFF)
-set(ZSTD_BUILD_SHARED OFF)
-add_subdirectory(zstd/build/cmake EXCLUDE_FROM_ALL)
-target_include_directories(libzstd_static INTERFACE $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/externals/zstd/lib>)
+if (NOT TARGET zstd::zstd)
+    message(STATUS "Using bundled zstd")
+    set(ZSTD_LEGACY_SUPPORT OFF)
+    set(ZSTD_BUILD_PROGRAMS OFF)
+    set(ZSTD_BUILD_SHARED OFF)
+    add_subdirectory(zstd/build/cmake EXCLUDE_FROM_ALL)
+    target_include_directories(libzstd_static INTERFACE $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/externals/zstd/lib>)
+    add_library(zstd::zstd ALIAS libzstd_static)
+endif()
 
 # ENet
-add_subdirectory(enet)
-target_include_directories(enet INTERFACE ./enet/include)
+if (NOT TARGET enet::enet)
+    message(STATUS "Using bundled enet")
+    add_subdirectory(enet EXCLUDE_FROM_ALL)
+    target_include_directories(enet INTERFACE ./enet/include)
+    add_library(enet::enet ALIAS enet)
+endif()
 
 # Cubeb
-if (ENABLE_CUBEB)
+if (ENABLE_CUBEB AND NOT TARGET cubeb::cubeb)
     set(BUILD_TESTS OFF CACHE BOOL "")
     add_subdirectory(cubeb EXCLUDE_FROM_ALL)
+    add_library(cubeb::cubeb ALIAS cubeb)
 endif()
 
 # DiscordRPC
-if (USE_DISCORD_PRESENCE)
+if (USE_DISCORD_PRESENCE AND NOT TARGET DiscordRPC::discord-rpc)
     add_subdirectory(discord-rpc EXCLUDE_FROM_ALL)
     target_include_directories(discord-rpc INTERFACE ./discord-rpc/include)
 endif()
 
 # JSON
-add_library(json-headers INTERFACE)
-target_include_directories(json-headers INTERFACE ./json)
+if (ENABLE_WEB_SERVICE AND NOT TARGET nlohmann_json::nlohmann_json)
+    message(STATUS "Using bundled json")
+    add_library(nlohmann_json INTERFACE)
+    target_include_directories(nlohmann_json INTERFACE ./json)
+    add_library(nlohmann_json::nlohmann_json ALIAS nlohmann_json)
+endif()
 
 if (ENABLE_WEB_SERVICE)
-    find_package(OpenSSL 1.1)
-    if (OPENSSL_FOUND)
-        set(OPENSSL_LIBRARIES OpenSSL::SSL OpenSSL::Crypto)
-    else()
+    if (NOT WIN32)
+        find_package(OpenSSL 1.1)
+        if (OPENSSL_FOUND)
+            set(OPENSSL_LIBRARIES OpenSSL::SSL OpenSSL::Crypto)
+        endif()
+    endif()
+
+    if (WIN32 OR NOT OPENSSL_FOUND)
         # LibreSSL
         set(LIBRESSL_SKIP_INSTALL ON CACHE BOOL "")
         set(OPENSSLDIR "/etc/ssl/")
@@ -167,17 +194,22 @@ if (ENABLE_WEB_SERVICE)
             DEFINITION OPENSSL_LIBS)
     endif()
 
-    if(ANDROID)
-        add_subdirectory(android-ifaddrs)
+    if (NOT TARGET httplib::httplib)
+        message(STATUS "Using bundled httplib")
+        add_library(httplib INTERFACE)
+        target_include_directories(httplib INTERFACE ./httplib)
+        target_compile_definitions(httplib INTERFACE -DCPPHTTPLIB_OPENSSL_SUPPORT)
+        target_link_libraries(httplib INTERFACE ${OPENSSL_LIBRARIES})
+        if (WIN32)
+            target_link_libraries(httplib INTERFACE crypt32 cryptui ws2_32)
+        endif()
+        add_library(httplib::httplib ALIAS httplib)
     endif()
-
-    # httplib
-    add_library(httplib INTERFACE)
-    target_include_directories(httplib INTERFACE ./httplib)
-    target_compile_options(httplib INTERFACE -DCPPHTTPLIB_OPENSSL_SUPPORT)
-    target_link_libraries(httplib INTERFACE ${OPENSSL_LIBRARIES})
+endif()
 
     # cpp-jwt
+if (ENABLE_WEB_SERVICE AND NOT TARGET cpp-jwt::cpp-jwt)
+    message(STATUS "Using bundled cpp-jwt")
     add_library(cpp-jwt INTERFACE)
     target_include_directories(cpp-jwt INTERFACE ./cpp-jwt/include)
     target_compile_definitions(cpp-jwt INTERFACE CPP_JWT_USE_VENDORED_NLOHMANN_JSON)
@@ -194,7 +226,8 @@ if(ANDROID)
 endif()
 
 # OpenAL Soft
-if (ENABLE_OPENAL)
+if (ENABLE_OPENAL AND NOT TARGET OpenAL::OpenAL)
+    message(STATUS "Using bundled OpenAL")
     set(ALSOFT_EMBED_HRTF_DATA OFF CACHE BOOL "")
     set(ALSOFT_EXAMPLES OFF CACHE BOOL "")
     set(ALSOFT_INSTALL OFF CACHE BOOL "")

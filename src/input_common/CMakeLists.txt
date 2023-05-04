@@ -36,8 +36,7 @@ if(ENABLE_LIBUSB)
         gcadapter/gc_poller.cpp
         gcadapter/gc_poller.h
     )
-    target_include_directories(input_common PRIVATE ${LIBUSB_INCLUDE_DIR})
-    target_link_libraries(input_common PRIVATE ${LIBUSB_LIBRARIES})
+    target_link_libraries(input_common PRIVATE libusb::usb)
     add_definitions(-DENABLE_GCADAPTER)
 endif()
 

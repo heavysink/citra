@@ -19,7 +19,7 @@ add_executable(citra
 create_target_directory_groups(citra)
 
 target_link_libraries(citra PRIVATE citra_common citra_core input_common network)
-target_link_libraries(citra PRIVATE inih glad)
+target_link_libraries(citra PRIVATE inih::INIReader glad)
 if (MSVC)
     target_link_libraries(citra PRIVATE getopt)
 endif()

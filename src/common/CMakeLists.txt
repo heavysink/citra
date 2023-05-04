@@ -153,11 +153,11 @@ endif()
 create_target_directory_groups(citra_common)
 
 target_link_libraries(citra_common PUBLIC fmt::fmt microprofile Boost::boost Boost::serialization Boost::iostreams)
-target_link_libraries(citra_common PRIVATE libzstd_static)
+target_link_libraries(citra_common PRIVATE zstd::zstd)
 set_target_properties(citra_common PROPERTIES INTERPROCEDURAL_OPTIMIZATION ${ENABLE_LTO})
 
 if ("x86_64" IN_LIST ARCHITECTURE)
-    target_link_libraries(citra_common PRIVATE xbyak)
+    target_link_libraries(citra_common PRIVATE xbyak::xbyak)
 endif()
 
 if (CITRA_USE_PRECOMPILED_HEADERS)

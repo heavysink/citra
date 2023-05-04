@@ -5,9 +5,13 @@ cmake_minimum_required(VERSION 3.15)
 cmake_policy(SET CMP0092 NEW)
 # Enforce new LTO setting
 cmake_policy(SET CMP0069 NEW)
+# Dynarmic has cmake_minimum_required(3.12) and we may want to override
+# some of its variables, which is only possible in 3.13+
+set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/CMakeModules")
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/externals/cmake-modules")
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/externals/find-modules")
 include(DownloadExternals)
 include(CMakeDependentOption)
 
@@ -79,6 +83,12 @@ if (CITRA_USE_PRECOMPILED_HEADERS)
     set(CMAKE_PCH_INSTANTIATE_TEMPLATES ON)
 endif()
 
+option(CITRA_CHECK_SUBMODULES "Check if submodules are present" ON)
+
+CMAKE_DEPENDENT_OPTION(CITRA_USE_FASTER_LD "Check if a faster linker is available" ON "NOT WIN32" OFF)
+
+option(CITRA_TESTS "Compile tests" ON)
+
 if(NOT EXISTS ${PROJECT_SOURCE_DIR}/.git/hooks/pre-commit)
     message(STATUS "Copying pre-commit hook")
     file(COPY hooks/pre-commit
@@ -123,7 +133,10 @@ function(check_submodules_present)
         endif()
     endforeach()
 endfunction()
-check_submodules_present()
+
+if(EXISTS ${PROJECT_SOURCE_DIR}/.gitmodules AND CITRA_CHECK_SUBMODULES)
+    check_submodules_present()
+endif()
 
 configure_file(${PROJECT_SOURCE_DIR}/dist/compatibility_list/compatibility_list.qrc
                ${PROJECT_BINARY_DIR}/dist/compatibility_list/compatibility_list.qrc
@@ -200,6 +213,40 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin/$<CONFIG>)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
+find_package(enet 1.3)
+find_package(fmt 8.1.1 CONFIG)
+find_package(inih)
+find_package(libusb 1.0.24)
+find_package(cryptopp)
+find_package(zstd 1.4)
+find_package(nlohmann_json)
+
+if (ARCHITECTURE_x86 OR ARCHITECTURE_x86_64)
+    find_package(xbyak 6)
+    find_package(dynarmic 6.4.0)
+endif()
+
+if (ENABLE_CUBEB)
+    find_package(cubeb)
+endif()
+
+if (USE_DISCORD_PRESENCE)
+    find_package(DiscordRPC)
+endif()
+
+if (ENABLE_WEB_SERVICE)
+    find_package(cpp-jwt 1.4)
+    find_package(httplib)
+endif()
+
+if (CITRA_TESTS)
+    find_package(Catch2 2)
+endif()
+
+if(ENABLE_OPENAL)
+    find_package(OpenAL 1.23.0)
+endif()
+
 if (ENABLE_QT)
     if (CITRA_USE_BUNDLED_QT)
         download_qt_external(5.15.2 QT_PREFIX)
@@ -221,19 +268,6 @@ if (ENABLE_QT)
         get_target_property(qmake_executable Qt5::qmake IMPORTED_LOCATION)
         get_filename_component(qt_bin_dir "${qmake_executable}" DIRECTORY)
         list(APPEND CMAKE_PREFIX_PATH ${qt_bin_dir})
-    endif()
-endif()
-
-# Ensure libusb is properly configured (based on dolphin libusb include)
-if (ENABLE_LIBUSB)
-    if(NOT APPLE)
-        include(FindPkgConfig)
-        find_package(LibUSB)
-    endif()
-    if (NOT LIBUSB_FOUND)
-        add_subdirectory(externals/libusb)
-        set(LIBUSB_INCLUDE_DIR "")
-        set(LIBUSB_LIBRARIES usb)
     endif()
 endif()
 
@@ -388,13 +422,23 @@ if (NOT USE_SYSTEM_BOOST)
     add_definitions( -DBOOST_ALL_NO_LIB )
 endif()
 
+if (CITRA_USE_FASTER_LD AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    # We will assume that if the compiler is GCC, it will attempt to use ld.bfd by default.
+    # Try to pick a faster linker.
+    find_program(LLD lld)
+    find_program(MOLD mold)
+
+    if (MOLD AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "12.1")
+        message(NOTICE "Selecting mold as linker")
+        add_link_options("-fuse-ld=mold")
+    elseif (LLD)
+        message(NOTICE "Selecting lld as linker")
+        add_link_options("-fuse-ld=lld")
+    endif()
+endif()
+
 enable_testing()
 add_subdirectory(externals)
-
-# See externals/CMakeLists.txt
-foreach(def ${CRYPTOPP_COMPILE_DEFINITIONS})
-    add_definitions(-D${def})
-endforeach()
 
 # Boost
 if (USE_SYSTEM_BOOST)
